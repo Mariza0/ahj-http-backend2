@@ -7,15 +7,38 @@ const uuid = require('uuid');
 
 const app = new Koa();
 
-let subscriptions = [];
+function setTime() {
+
+    // Создаем объект для текущей даты
+    let currentDate = new Date();
+
+    // Получаем текущую дату в формате YYYY-MM-DD
+    let year = currentDate.getFullYear();
+    let month = String(currentDate.getMonth() + 1).padStart(2, '0'); // Добавляем ведущий ноль, если месяц < 10
+    let day = String(currentDate.getDate()).padStart(2, '0'); // Добавляем ведущий ноль, если день < 10
+
+    // Формируем строку даты в формате YYYY-MM-DD
+    let formattedDate = year + '-' + month + '-' + day;
+
+    // Устанавливаем значение поля ввода равным текущей дате
+    return formattedDate;
+}
+
 
 app.use(koaBody({
     urlencoded: true,
     multipart: true,
 }));
 
+app.use((ctx, next) => {  
 
-app.use((ctx, next) => {
+    if (ctx.request.url === '/') {
+
+        ctx.response.set('Access-Control-Allow-Origin', '*');
+        ctx.response.body = 'Hello, World!';
+        return;
+      }
+
     if (ctx.request.method !== 'OPTIONS') {
         next();
         return;
@@ -23,97 +46,216 @@ app.use((ctx, next) => {
     ctx.response.set('Access-Control-Allow-Origin', '*');
     ctx.response.set('Access-Control-Allow-Methods', 'DELETE, PUT, PATCH, GET, POST');
     ctx.response.status = 204;
-});
+}); 
 
-// // добавление файла
-app.use((ctx,  next) => {
+app.use(async ctx => {
+    const method  = ctx.request.query.method;
+    console.log(method, 'method')
 
-    console.log(ctx.request.url,'ctx.request.url');
+    switch (method) {
 
-    if (ctx.request.method === 'POST' && ctx.request.url === '/upload') {
+        case 'allTickets':
 
-        console.log('это загрузка файла')
-        ctx.response.set('Access-Control-Allow-Origin', '*');
-        console.log(ctx.request.files, 'ctx.request.files');
-        let fileName;
-    
-        try {    
-            const public = path.join(__dirname, '/public');
-    
-            const { file } = ctx.request.files;
+            try {
 
-            const subfolder = uuid.v4();
+                console.log('получаем данные')
+       
+                const public = path.join(__dirname, '/public');
+                const filePath = public + '/' + 'tickets.json';
+                const existingData = fs.readFileSync(filePath, 'utf-8');
+                const jsonData = await JSON.parse(existingData);
 
-            const uploadFolder = public + '/' + subfolder;
+                ctx.response.set('Access-Control-Allow-Origin', '*');
 
-            fs.mkdirSync(uploadFolder);
-    
-            fs.copyFileSync(file.filepath, uploadFolder + '/' + file.originalFilename);
+                ctx.response.status = 200;
+
+                ctx.response.body = jsonData;
+                console.log('получение данных с сервера');
             
-            
-        } catch (error) {
-            ctx.response.status = 500;
-    
+                return;
+
+            } catch (error) {
+                console.log(error);
+            }
             return;
-        }
-        ctx.response.body = 'ok';
-         
-    } else {
+           
+        case 'createTicket':
+            console.log('создание тикета');
+            try { 
 
-        next();
-        return;
-    
-}});
+                const public = path.join(__dirname, '/public');
+                const data = ctx.request.body;
+        
+                const id = uuid.v4();
+                const filePath = public + '/' + 'tickets.json';
+        
+                const creationDate = setTime();
+                console.log('creationDate')
+                const dataTicket = {
+                    "name": data.name,
+                    "description": data.description,
+                    "creationDate": creationDate,
+                    "id": id,
+                    "statusTicket": false
+                } 
+        
+                const existingData = fs.readFileSync(filePath, 'utf-8');
+        
+                const jsonArray = JSON.parse(existingData);
+                
+                jsonArray.push(dataTicket);
+        
+                // Преобразование массив обратно в JSON-строку с отступами
+                const updatedJsonString = JSON.stringify(jsonArray, null, 2);
+        
+                fs.writeFileSync(filePath, updatedJsonString, 'utf-8');
+                ctx.response.status = 200;
+                ctx.response.set('Access-Control-Allow-Origin', '*');
+                ctx.response.body = 'ok';      
+                return;
+            } catch (error) {
+                ctx.response.status = 500;
+                return;
+            }
 
-// добавление данных. если номер уже есть то записи нет
-app.use((ctx,  next) => {
-    if (ctx.request.method !== 'POST') {
-        next();
-        return;
+        case 'changeTicket' :
+
+            try {
+                const public = path.join(__dirname, '/public');
+
+                const filePath = public + '/' + 'tickets.json';
+
+                const data = ctx.request.body;
+
+                const { id } = ctx.request.query;
+            
+                const existingData = fs.readFileSync(filePath, 'utf-8');
+
+                let existingDataParse = JSON.parse(existingData);
+
+                const indexFilteredData = existingDataParse.findIndex(item => item.id === id);
+                existingDataParse[indexFilteredData].name = data.name;
+                existingDataParse[indexFilteredData].description = data.description;
+  
+                const updatedJsonString = JSON.stringify(existingDataParse, null, 2);
+  
+                fs.writeFileSync(filePath, updatedJsonString, 'utf-8');
+
+                ctx.response.status = 204;
+                ctx.response.set('Access-Control-Allow-Origin', '*');
+                ctx.response.body = 'ok';
+                return;
+
+            } catch (error) {
+                console.log(error);
+                ctx.response.status = 500;
+                return;
+            }
+
+        case 'deleteTicket' :
+
+            console.log('удаление');
+            ctx.response.set('Access-Control-Allow-Origin', '*');
+            ctx.response.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, access-control-allow-headers; charset=UTF-8');
+
+            ctx.response.set('Access-Control-Allow-Methods', 'DELETE');
+            
+            const { id } = ctx.request.query;
+
+            const public = path.join(__dirname, '/public');
+
+            const filePath = public + '/' + 'tickets.json';
+
+            const existingData = fs.readFileSync(filePath, 'utf-8');
+
+            let existingDataParse = JSON.parse(existingData);
+
+            const filteredData = existingDataParse.filter(item => item.id !== id);
+
+            const updatedJsonString = JSON.stringify(filteredData, null, 2);
+        
+            fs.writeFileSync(filePath, updatedJsonString, 'utf-8');
+
+            ctx.response.status = 204;
+            return;
+
+        case 'changeStatus' :
+
+            try {
+                const public = path.join(__dirname, '/public');
+
+                const filePath = public + '/' + 'tickets.json';
+
+                const data = ctx.request.body;
+
+                const { id, status } = ctx.request.query;
+
+                console.log(status, 'status')
+            
+                const existingData = fs.readFileSync(filePath, 'utf-8');
+
+                let existingDataParse = JSON.parse(existingData);
+
+                const indexFilteredData = existingDataParse.findIndex(item => item.id === id);
+            
+                existingDataParse[indexFilteredData].statusTicket = JSON.parse(status);
+  
+                const updatedJsonString = JSON.stringify(existingDataParse, null, 2);
+  
+                fs.writeFileSync(filePath, updatedJsonString, 'utf-8');
+
+                ctx.response.status = 204;
+                ctx.response.set('Access-Control-Allow-Origin', '*');
+                ctx.response.body = 'ok';
+                return;
+                
+            } catch (error) {
+
+                console.log(error);
+                ctx.response.status = 500;
+                return;
+                
+            }
+
+        case 'getDescription' :
+            try {
+                
+                const public = path.join(__dirname, '/public');
+
+                const filePath = public + '/' + 'tickets.json';
+
+                const data = ctx.request.body;
+
+                const { id } = ctx.request.query;
+            
+                const existingData = fs.readFileSync(filePath, 'utf-8');
+
+                let existingDataParse = JSON.parse(existingData);
+
+                const indexFilteredData = existingDataParse.findIndex(item => item.id === id);
+                
+                const description = existingDataParse[indexFilteredData].description;
+
+                ctx.response.set('Access-Control-Allow-Origin', '*');
+
+                ctx.response.status = 200;
+
+                ctx.response.body = description;
+                return;
+
+            } catch (error) {
+
+                console.log(error);
+                ctx.response.status = 500;
+                return;
+            }
+
+        default:
+            ctx.response.status = 404;
+            ctx.response.body = '(((('; 
+            return;
     }
-    console.log(ctx.request.body, 'ctx.request.body');
-
-    const { name, phone } = ctx.request.body;
-
-    ctx.response.set('Access-Control-Allow-Origin', '*');
-
-    if (subscriptions.some(sub => sub.phone === phone)) {
-        ctx.response.status = 400;
-        ctx.response.body = 'subscription exists';
-        return;
-    }
-    subscriptions.push({ name, phone });
-    
-    ctx.response.body = 'ok, добавили';
-
-    next();
 });
-
-// удаление данных. если номера нет то не удалит
-app.use((ctx,  next) => {
-    if (ctx.request.method !== 'DELETE') {
-        next();
-        return;
-    }
-    console.log(ctx.request.body, 'ctx.request.body');
-
-    const { phone } = ctx.request.query;
-    console.log(phone,'phone');
-
-    ctx.response.set('Access-Control-Allow-Origin', '*');
-
-    if (subscriptions.every(sub => sub.phone !== phone)) {
-        ctx.response.status = 400;
-        ctx.response.body = 'subscription doesn`t exists';
-        return;
-    }
-    subscriptions = subscriptions.filter(sub => sub.phone !== phone);
-    
-    ctx.response.body = 'ok, удалили';
-
-    next();
-});
-
 
 app.use((ctx) => {
     console.log('second midleware');
