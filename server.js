@@ -263,7 +263,7 @@ app.use((ctx) => {
 
 const server = http.createServer(app.callback());
 
-const port = 7070;
+const port = process.env.PORT || 7070;
 
 server.listen(port, (err) => {
     if (err) {
